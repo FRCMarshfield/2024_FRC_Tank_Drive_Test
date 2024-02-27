@@ -35,11 +35,14 @@ public class Robot extends TimedRobot {
   private static final int leftRearDeviceID = 3;
   private static final int rightFrontDeviceID = 1;
   private static final int rightRearDeviceID = 2;
-  //swapped not 1 with 2 and 3 with 4
+  private static final int armPivotLeftID = 5;
+  private static final int armPivotRightID = 6;
   private CANSparkMax m_leftFront;
   private CANSparkMax m_leftRear;
   private CANSparkMax m_rightFront;
   private CANSparkMax m_rightRear;
+  private CANSparkMax m_armPivotLeft;
+  private CANSparkMax m_armPivotRight;
 
   /**
    * This function is run when the robot is first started up and should be used for any
@@ -55,6 +58,9 @@ public class Robot extends TimedRobot {
     m_leftRear = new CANSparkMax(leftRearDeviceID, MotorType.kBrushless);
     m_rightFront = new CANSparkMax(rightFrontDeviceID, MotorType.kBrushless);
     m_rightRear = new CANSparkMax(rightRearDeviceID, MotorType.kBrushless);
+    m_armPivotLeft = new CANSparkMax(armPivotLeftID, MotorType.kBrushless);
+    m_armPivotRight = new CANSparkMax(armPivotRightID, MotorType.kBrushless);
+    
 
     /**
      * The RestoreFactoryDefaults method can be used to reset the configuration parameters
@@ -83,6 +89,14 @@ public class Robot extends TimedRobot {
    * <p>This runs after the mode specific periodic functions, but before LiveWindow and
    * SmartDashboard integrated updating.
    */
+   public void setArmMotor(double percent){
+    m_armPivotLeft.set(percent);
+    m_armPivotRight.set(-percent);
+    //SmartDashboard.putNumber("arm power (%)", percent);
+    //SmartDashboard.putNumber("arm motor current (amps)", arm.getOutputCurrent());
+    //SmartDashboard.putNumber("arm motor temperature (C)", arm.getMotorTemperature());
+  }
+
   @Override
   public void robotPeriodic() {}
 
@@ -123,20 +137,29 @@ public class Robot extends TimedRobot {
   public void teleopInit() {}
 
   /** This function is called periodically during operator control. */
-  static boolean driveSwitch = false;
+  static boolean driveDirection = false;
   @Override
   public void teleopPeriodic() {
-    if(driveSwitch == false){
+    if (m_leftStick.getRawButton(5)){
+      driveDirection = !driveDirection;
+    }
+    if(driveDirection == false){
       m_myRobot.arcadeDrive(m_leftStick.getX(), m_leftStick.getY(), true);
     }
-    if (m_rightStick.getRawButton(4)){
-      driveSwitch = true;
-    }
-    if(driveSwitch == true){
+    if(driveDirection == true){
       m_myRobot.arcadeDrive(-m_leftStick.getX(), -m_leftStick.getY(), true);
     }
+    //if(m_rightStick.getRawButton(3)){
+    //  driveSwitch = true;
+    //}
     //m_myRobot.arcadeDrive(m_leftStick.getX(), m_leftStick.getY(), true);
     //m_myRobot.arcadeDrive(-m_leftStick.getRawAxis(1), m_leftStick.getRawAxis(4), true);
+    if(m_leftStick.getRawButton(4)){
+      setArmMotor(0.5);
+    }
+    else{
+      setArmMotor(0);
+    }
   }
 
   /** This function is called once when the robot is disabled. */
