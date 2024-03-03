@@ -7,8 +7,7 @@ package frc.robot;
 import edu.wpi.first.wpilibj.TimedRobot;
 import edu.wpi.first.wpilibj.smartdashboard.SendableChooser;
 import edu.wpi.first.wpilibj.smartdashboard.SmartDashboard;
-
-//our added imports below
+import edu.wpi.first.wpilibj.DutyCycleEncoder;
 import edu.wpi.first.wpilibj.Joystick;
 import com.revrobotics.CANSparkMax;
 import com.revrobotics.CANSparkLowLevel.MotorType;
@@ -29,20 +28,27 @@ public class Robot extends TimedRobot {
 
 //added
   private DifferentialDrive m_myRobot;
-  private Joystick m_leftStick;
-  private Joystick m_rightStick;
+  private Joystick m_leftStick; //driver controller
+  //private Joystick m_rightStick; //arm controller
   private static final int leftFrontDeviceID = 4;
   private static final int leftRearDeviceID = 3;
   private static final int rightFrontDeviceID = 1;
   private static final int rightRearDeviceID = 2;
   private static final int armPivotLeftID = 5;
   private static final int armPivotRightID = 6;
+  private static final int intakeShootBottomID = 7;
+  private static final int intakeShootTopID = 8;
+  private static final int intake = 9;
   private CANSparkMax m_leftFront;
   private CANSparkMax m_leftRear;
   private CANSparkMax m_rightFront;
   private CANSparkMax m_rightRear;
   private CANSparkMax m_armPivotLeft;
   private CANSparkMax m_armPivotRight;
+  private CANSparkMax m_intakeShootBottom;
+  private CANSparkMax m_intakeShootTop;
+  private CANSparkMax m_intake;
+  static final DutyCycleEncoder encoder = new DutyCycleEncoder(0); //pivot encoder
 
   /**
    * This function is run when the robot is first started up and should be used for any
@@ -60,6 +66,9 @@ public class Robot extends TimedRobot {
     m_rightRear = new CANSparkMax(rightRearDeviceID, MotorType.kBrushless);
     m_armPivotLeft = new CANSparkMax(armPivotLeftID, MotorType.kBrushless);
     m_armPivotRight = new CANSparkMax(armPivotRightID, MotorType.kBrushless);
+    m_intakeShootBottom = new CANSparkMax(intakeShootBottomID, MotorType.kBrushless);
+    m_intakeShootTop = new CANSparkMax(intakeShootTopID, MotorType.kBrushless);
+    m_intake = new CANSparkMax(intake, MotorType.kBrushless);
     
 
     /**
@@ -79,7 +88,7 @@ public class Robot extends TimedRobot {
     m_myRobot = new DifferentialDrive(m_leftFront, m_rightFront);
 
     m_leftStick = new Joystick(0);
-    m_rightStick = new Joystick(1);
+    //m_rightStick = new Joystick(1);
   }
 
   /**
@@ -89,12 +98,35 @@ public class Robot extends TimedRobot {
    * <p>This runs after the mode specific periodic functions, but before LiveWindow and
    * SmartDashboard integrated updating.
    */
+
+   //motor vars
+   static boolean intakeOn = false;
+   static boolean pivotOn = false;
+   static boolean shootOn = false;
+
+   //arm motor setter
    public void setArmMotor(double percent){
-    m_armPivotLeft.set(percent);
-    m_armPivotRight.set(-percent);
-    //SmartDashboard.putNumber("arm power (%)", percent);
-    //SmartDashboard.putNumber("arm motor current (amps)", arm.getOutputCurrent());
-    //SmartDashboard.putNumber("arm motor temperature (C)", arm.getMotorTemperature());
+    if(pivotOn == true){
+      m_armPivotLeft.set(-percent);
+      m_armPivotRight.set(percent);
+    }else{
+      m_armPivotLeft.set(0);
+      m_armPivotRight.set(0);
+    }
+
+    if(intakeOn == true){
+      m_intake.set(0.5);
+    }else{
+      m_intake.set(0);
+    }
+    
+    if(shootOn == true){
+      m_intakeShootTop.set(-0.5);
+      m_intakeShootBottom.set(0.5);
+    }else{
+      m_intakeShootTop.set(0);
+      m_intakeShootBottom.set(0);
+    }
   }
 
   @Override
@@ -134,12 +166,17 @@ public class Robot extends TimedRobot {
 
   /** This function is called once when teleop is enabled. */
   @Override
-  public void teleopInit() {}
+  public void teleopInit() {
+    encoder.reset();
+  }
 
   /** This function is called periodically during operator control. */
-  static boolean driveDirection = false;
+  static boolean driveDirection = false; //front switch
   @Override
   public void teleopPeriodic() {
+    SmartDashboard.putNumber("Distance", encoder.getAbsolutePosition()); //read out encoder pos
+
+    //drive flip (weirdly inconsistant)
     if (m_leftStick.getRawButton(5)){
       driveDirection = !driveDirection;
     }
@@ -149,13 +186,51 @@ public class Robot extends TimedRobot {
     if(driveDirection == true){
       m_myRobot.arcadeDrive(-m_leftStick.getX(), -m_leftStick.getY(), true);
     }
-    //if(m_rightStick.getRawButton(3)){
-    //  driveSwitch = true;
-    //}
+    //potential dual joystick driving
     //m_myRobot.arcadeDrive(m_leftStick.getX(), m_leftStick.getY(), true);
     //m_myRobot.arcadeDrive(-m_leftStick.getRawAxis(1), m_leftStick.getRawAxis(4), true);
+
+    //intake button
+    if(m_leftStick.getRawButton(2)){
+      intakeOn = true;
+      setArmMotor(0);
+    }else{
+      intakeOn = false;
+    }
+
+    //shoot button
+    if(m_leftStick.getRawButton(2)){
+      intakeOn = true;
+      setArmMotor(0);
+    }else{
+      intakeOn = false;
+    }
+
+    //pivot main arm up
     if(m_leftStick.getRawButton(4)){
-      setArmMotor(0.5);
+      pivotOn = true;
+      if(encoder.getAbsolutePosition() > 0.8){
+        setArmMotor(0.5);
+      }else if(encoder.getAbsolutePosition() > 0.7){
+        setArmMotor(0.15);
+      }else if(encoder.getAbsolutePosition() == 0.7){
+        setArmMotor(0);
+      }  
+    }
+    else{
+      setArmMotor(0);
+      pivotOn = false;
+    }
+
+    //pivot main arm down
+    if(m_leftStick.getRawButton(1)){
+      if(encoder.getAbsolutePosition() < 0.9){
+        setArmMotor(-0.5);
+      }else if(encoder.getAbsolutePosition() < 0.95){
+        setArmMotor(-0.15);
+      }else if(encoder.getAbsolutePosition() == 1){
+        setArmMotor(0);
+      }  
     }
     else{
       setArmMotor(0);
