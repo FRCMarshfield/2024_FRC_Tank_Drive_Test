@@ -7,6 +7,7 @@ package frc.robot;
 import edu.wpi.first.wpilibj.TimedRobot;
 import edu.wpi.first.wpilibj.smartdashboard.SendableChooser;
 import edu.wpi.first.wpilibj.smartdashboard.SmartDashboard;
+import edu.wpi.first.wpilibj.DigitalInput;
 import edu.wpi.first.wpilibj.DutyCycleEncoder;
 import edu.wpi.first.wpilibj.Joystick;
 import com.revrobotics.CANSparkMax;
@@ -28,16 +29,16 @@ public class Robot extends TimedRobot {
 
 //added
   private DifferentialDrive m_myRobot;
-  private Joystick m_leftStick; //driver controller
-  //private Joystick m_rightStick; //arm controller
+  private Joystick m_Driver; //driver controller
+  private Joystick m_Arm; //arm controller
   private static final int leftFrontDeviceID = 4;
   private static final int leftRearDeviceID = 3;
   private static final int rightFrontDeviceID = 1;
   private static final int rightRearDeviceID = 2;
   private static final int armPivotLeftID = 5;
   private static final int armPivotRightID = 6;
-  private static final int intakeShootBottomID = 7;
-  private static final int intakeShootTopID = 8;
+  private static final int intakeShootBottomID = 8;
+  private static final int intakeShootTopID = 7;
   private static final int intake = 9;
   private CANSparkMax m_leftFront;
   private CANSparkMax m_leftRear;
@@ -49,6 +50,7 @@ public class Robot extends TimedRobot {
   private CANSparkMax m_intakeShootTop;
   private CANSparkMax m_intake;
   static final DutyCycleEncoder encoder = new DutyCycleEncoder(0); //pivot encoder
+  DigitalInput laser = new DigitalInput(4);
 
   /**
    * This function is run when the robot is first started up and should be used for any
@@ -87,8 +89,11 @@ public class Robot extends TimedRobot {
 
     m_myRobot = new DifferentialDrive(m_leftFront, m_rightFront);
 
-    m_leftStick = new Joystick(0);
-    //m_rightStick = new Joystick(1);
+    m_Driver = new Joystick(0);
+    m_Arm = new Joystick(1);
+    m_Driver.setXChannel(4);
+    m_Driver.setYChannel(1);
+
   }
 
   /**
@@ -100,32 +105,43 @@ public class Robot extends TimedRobot {
    */
 
    //motor vars
-   static boolean intakeOn = false;
-   static boolean pivotOn = false;
-   static boolean shootOn = false;
+   static boolean intakeOn = false; //false = not active
+   static boolean pivotOn = false; //false = not active
+   static boolean shootOn = false; //false = not active
+   static double shooterSpeed = 0.39; //main shoot speed
+   static boolean intakeMode = false; //false = sucky uppy, true = shoooooooot
+   static boolean ampShoot = false; //false = regular, true = shoot the amp
+   static boolean ampMode = false; //false = regular, true = amp feed mode
+   static boolean driveDirection = false; //front switch var
+   static int pivotDirection = 2; //0 down, 1 up, 2 nothing
 
    //arm motor setter
    public void setArmMotor(double percent){
-    if(pivotOn == true){
-      m_armPivotLeft.set(-percent);
-      m_armPivotRight.set(percent);
-    }else{
-      m_armPivotLeft.set(0);
-      m_armPivotRight.set(0);
-    }
+    m_armPivotLeft.set(-percent);
+    m_armPivotRight.set(percent);
 
     if(intakeOn == true){
-      m_intake.set(0.5);
+      if(intakeMode == false){ //sucky uppy
+        m_intake.set(0.2);
+      }else if(intakeMode == true){ //shoot mode
+        m_intake.set(0.8);
+      }
     }else{
       m_intake.set(0);
     }
     
-    if(shootOn == true){
-      m_intakeShootTop.set(-0.5);
-      m_intakeShootBottom.set(0.5);
+    if(ampShoot == true){ //amp shoot mode
+      m_intakeShootTop.set(0.2);
+      m_intakeShootBottom.set(0.2);
+      m_intake.set(0.2);
     }else{
       m_intakeShootTop.set(0);
       m_intakeShootBottom.set(0);
+    }
+
+    if(shootOn == true){
+      m_intakeShootTop.set(shooterSpeed);
+      m_intakeShootBottom.set(shooterSpeed);
     }
   }
 
@@ -171,70 +187,121 @@ public class Robot extends TimedRobot {
   }
 
   /** This function is called periodically during operator control. */
-  static boolean driveDirection = false; //front switch
+
   @Override
   public void teleopPeriodic() {
-    SmartDashboard.putNumber("Distance", encoder.getAbsolutePosition()); //read out encoder pos
+    SmartDashboard.putNumber("Pivot Read Out", encoder.getAbsolutePosition()); //read out encoder pos
+    SmartDashboard.putNumber("PivotDirection", pivotDirection);
+    SmartDashboard.putNumber("Arm stick input", m_Arm.getY());
+    SmartDashboard.putBoolean("Laser", laser.get());
 
-    //drive flip (weirdly inconsistant)
-    if (m_leftStick.getRawButton(5)){
+    //drive flip
+    if (m_Driver.getRawButton(1)){
       driveDirection = !driveDirection;
     }
     if(driveDirection == false){
-      m_myRobot.arcadeDrive(m_leftStick.getX(), m_leftStick.getY(), true);
+      m_myRobot.arcadeDrive(m_Driver.getX(), m_Driver.getY(), true);
     }
     if(driveDirection == true){
-      m_myRobot.arcadeDrive(-m_leftStick.getX(), -m_leftStick.getY(), true);
+      m_myRobot.arcadeDrive(-m_Driver.getX(), -m_Driver.getY(), true);
     }
-    //potential dual joystick driving
-    //m_myRobot.arcadeDrive(m_leftStick.getX(), m_leftStick.getY(), true);
-    //m_myRobot.arcadeDrive(-m_leftStick.getRawAxis(1), m_leftStick.getRawAxis(4), true);
 
-    //intake button
-    if(m_leftStick.getRawButton(2)){
-      intakeOn = true;
-      setArmMotor(0);
+    //arm manual direction set
+    if(m_Arm.getY() > 0.01 ){
+      pivotDirection = 0;
+    }else if(m_Arm.getY() < -0.01){
+      pivotDirection = 1;
     }else{
-      intakeOn = false;
+      pivotDirection = 2;
     }
 
-    //shoot button
-    if(m_leftStick.getRawButton(2)){
-      intakeOn = true;
-      setArmMotor(0);
-    }else{
-      intakeOn = false;
-    }
+    /*if(encoder.getAbsolutePosition() < 0.990){
+      setArmMotor(m_Arm.getY()/4);
+    }*/
 
-    //pivot main arm up
-    if(m_leftStick.getRawButton(4)){
-      pivotOn = true;
-      if(encoder.getAbsolutePosition() > 0.8){
-        setArmMotor(0.5);
-      }else if(encoder.getAbsolutePosition() > 0.7){
-        setArmMotor(0.15);
-      }else if(encoder.getAbsolutePosition() == 0.7){
-        setArmMotor(0);
-      }  
-    }
-    else{
-      setArmMotor(0);
-      pivotOn = false;
-    }
-
-    //pivot main arm down
-    if(m_leftStick.getRawButton(1)){
-      if(encoder.getAbsolutePosition() < 0.9){
+    //intake position setpoint (needs work)
+    /*if(m_Arm.getRawButton(1)){
+      if(encoder.getAbsolutePosition() < 0.990){
         setArmMotor(-0.5);
-      }else if(encoder.getAbsolutePosition() < 0.95){
-        setArmMotor(-0.15);
-      }else if(encoder.getAbsolutePosition() == 1){
+      }else{
+        setArmMotor(0);
+      }
+    }*/
+
+    //amp shoot
+    if(m_Arm.getRawButton(2)){
+      ampShoot = true;
+    }else{
+      ampShoot = false;
+    }
+
+    //intake note
+    if(m_Arm.getRawButton(1)){
+      if(laser.get()){
+      intakeOn = true;
+      }else{
+        intakeOn = false;
+      }
+    }else{
+      intakeOn = false;
+    }
+
+    //shoot spinup
+    if(m_Arm.getRawButton(5)){
+      shootOn = true;
+    }else{
+      shootOn = false;
+    }
+
+    //shoot the note
+    if(m_Arm.getRawButton(6)){
+        intakeMode = true;
+        intakeOn = true;
+    }else{
+      intakeMode = false;
+    }
+
+    if(pivotDirection == 0){
+      if(encoder.getAbsolutePosition() > 0.8){
+        setArmMotor(0.25);
+      }else if(encoder.getAbsolutePosition() > 0.75){
+        setArmMotor(0.15);
+      }else if(encoder.getAbsolutePosition() <= 0.75){
         setArmMotor(0);
       }  
-    }
-    else{
+    }else if(pivotDirection == 1){
+      if(encoder.getAbsolutePosition() < 0.97){
+        setArmMotor(-0.25);
+      }else if(encoder.getAbsolutePosition() < 0.99){
+        setArmMotor(-0.15);
+      }else if(encoder.getAbsolutePosition() >= 0.99){
+        setArmMotor(0);
+      }  
+    }else{
       setArmMotor(0);
     }
+    
+    //pivot main arm (needs work)
+    /*if(m_Arm.getRawButton(1)){
+      if(encoder.getAbsolutePosition() > 0.8){
+        setArmMotor(0.25);
+      }else if(encoder.getAbsolutePosition() > 0.75){
+        setArmMotor(0.15);
+      }else if(encoder.getAbsolutePosition() <= 0.75){
+        setArmMotor(0);
+      }  
+    }else if(m_Arm.getRawButton(4)){
+      if(encoder.getAbsolutePosition() < 0.97){
+        setArmMotor(-0.25);
+      }else if(encoder.getAbsolutePosition() < 0.99){
+        setArmMotor(-0.15);
+      }else if(encoder.getAbsolutePosition() >= 0.99){
+        setArmMotor(0);
+      }  
+    }else{
+      setArmMotor(0);
+    }*/
+
   }
 
   /** This function is called once when the robot is disabled. */
