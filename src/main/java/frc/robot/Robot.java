@@ -193,12 +193,14 @@ public class Robot extends TimedRobot {
       setArmMotor(0);
     }
 
-    if(timeRun > 6){
+    if(timeRun > 5){
       leftSpeed = 0;
       rightSpeed = 0;
     }else if(timeRun > 3){
-      leftSpeed = 0.20;
+      leftSpeed = 0.2;
       rightSpeed = -0.4;
+      //leftSpeed = 0.4;
+      //rightSpeed = -.2
     }
   }
 
