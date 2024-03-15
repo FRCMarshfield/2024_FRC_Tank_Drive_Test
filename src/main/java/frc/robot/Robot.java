@@ -5,6 +5,7 @@
 package frc.robot;
 
 import edu.wpi.first.wpilibj.TimedRobot;
+import edu.wpi.first.wpilibj.Timer;
 import edu.wpi.first.wpilibj.smartdashboard.SendableChooser;
 import edu.wpi.first.wpilibj.smartdashboard.SmartDashboard;
 import edu.wpi.first.wpilibj.DigitalInput;
@@ -51,6 +52,7 @@ public class Robot extends TimedRobot {
   private CANSparkMax m_intake;
   static final DutyCycleEncoder encoder = new DutyCycleEncoder(0); //pivot encoder
   DigitalInput laser = new DigitalInput(4);
+  //DigitalInput laser2 = new DigitalInput();
 
   /**
    * This function is run when the robot is first started up and should be used for any
@@ -108,7 +110,7 @@ public class Robot extends TimedRobot {
    static boolean intakeOn = false; //false = not active
    static boolean pivotOn = false; //false = not active
    static boolean shootOn = false; //false = not active
-   static double shooterSpeed = 0.39; //main shoot speed
+   static double shooterSpeed = 0.35; //main shoot speed
    static boolean intakeMode = false; //false = sucky uppy, true = shoooooooot
    static boolean ampShoot = false; //false = regular, true = shoot the amp
    static boolean ampMode = false; //false = regular, true = amp feed mode
@@ -124,7 +126,7 @@ public class Robot extends TimedRobot {
       if(intakeMode == false){ //sucky uppy
         m_intake.set(0.2);
       }else if(intakeMode == true){ //shoot mode
-        m_intake.set(0.8);
+        m_intake.set(0.7);
       }
     }else{
       m_intake.set(0);
@@ -141,7 +143,7 @@ public class Robot extends TimedRobot {
 
     if(shootOn == true){
       m_intakeShootTop.set(shooterSpeed);
-      m_intakeShootBottom.set(shooterSpeed);
+      m_intakeShootBottom.set(0.32);
     }
   }
 
@@ -158,25 +160,45 @@ public class Robot extends TimedRobot {
    * below with additional strings. If using the SendableChooser make sure to add them to the
    * chooser code above as well.
    */
+  double autoTimeStart;
+  double timeRun;
+  double leftSpeed;
+  double rightSpeed;
   @Override
   public void autonomousInit() {
     m_autoSelected = m_chooser.getSelected();
-    //m_autoSelected = SmartDashboard.getString("Auto Selector", kDefaultAuto);
-    //uncommented the above line
     System.out.println("Auto selected: " + m_autoSelected);
+    autoTimeStart = Timer.getFPGATimestamp();
   }
 
   /** This function is called periodically during autonomous. */
   @Override
   public void autonomousPeriodic() {
-    switch (m_autoSelected) {
-      case kCustomAuto:
-        // Put custom auto code here
-        break;
-      case kDefaultAuto:
-      default:
-        // Put default auto code here
-        break;
+    timeRun = Timer.getFPGATimestamp() - autoTimeStart;
+    m_myRobot.tankDrive(leftSpeed, rightSpeed);
+
+    if(timeRun < 2){ //shoot the note from start position
+      setArmMotor(0);
+      shootOn = true;
+      if(timeRun > 1){
+        System.out.println("Shoot");
+        intakeMode = true;
+        intakeOn = true;
+      }
+    }
+    if(timeRun > 2){
+      intakeMode = false;
+      intakeOn = false;
+      shootOn = false;
+      setArmMotor(0);
+    }
+
+    if(timeRun > 6){
+      leftSpeed = 0;
+      rightSpeed = 0;
+    }else if(timeRun > 3){
+      leftSpeed = 0.20;
+      rightSpeed = -0.4;
     }
   }
 
@@ -192,7 +214,6 @@ public class Robot extends TimedRobot {
   public void teleopPeriodic() {
     SmartDashboard.putNumber("Pivot Read Out", encoder.getAbsolutePosition()); //read out encoder pos
     SmartDashboard.putNumber("PivotDirection", pivotDirection);
-    SmartDashboard.putNumber("Arm stick input", m_Arm.getY());
     SmartDashboard.putBoolean("Laser", laser.get());
 
     //drive flip
@@ -200,10 +221,10 @@ public class Robot extends TimedRobot {
       driveDirection = !driveDirection;
     }
     if(driveDirection == false){
-      m_myRobot.arcadeDrive(m_Driver.getX(), m_Driver.getY(), true);
+      m_myRobot.arcadeDrive(m_Driver.getX()/2, m_Driver.getY()*0.75, true);
     }
     if(driveDirection == true){
-      m_myRobot.arcadeDrive(-m_Driver.getX(), -m_Driver.getY(), true);
+      m_myRobot.arcadeDrive(-m_Driver.getX()/2, -m_Driver.getY()*0.75, true);
     }
 
     //arm manual direction set
@@ -215,19 +236,6 @@ public class Robot extends TimedRobot {
       pivotDirection = 2;
     }
 
-    /*if(encoder.getAbsolutePosition() < 0.990){
-      setArmMotor(m_Arm.getY()/4);
-    }*/
-
-    //intake position setpoint (needs work)
-    /*if(m_Arm.getRawButton(1)){
-      if(encoder.getAbsolutePosition() < 0.990){
-        setArmMotor(-0.5);
-      }else{
-        setArmMotor(0);
-      }
-    }*/
-
     //amp shoot
     if(m_Arm.getRawButton(2)){
       ampShoot = true;
@@ -238,7 +246,9 @@ public class Robot extends TimedRobot {
     //intake note
     if(m_Arm.getRawButton(1)){
       if(laser.get()){
-      intakeOn = true;
+        //if(laser2.get()){
+          intakeOn = true;
+        //}
       }else{
         intakeOn = false;
       }
@@ -255,23 +265,26 @@ public class Robot extends TimedRobot {
 
     //shoot the note
     if(m_Arm.getRawButton(6)){
+      if(shootOn == true){
         intakeMode = true;
         intakeOn = true;
+      }  
     }else{
       intakeMode = false;
     }
 
+    //manual arm control
     if(pivotDirection == 0){
       if(encoder.getAbsolutePosition() > 0.8){
-        setArmMotor(0.25);
-      }else if(encoder.getAbsolutePosition() > 0.75){
+        setArmMotor(0.30);
+      }else if(encoder.getAbsolutePosition() > 0.76){
         setArmMotor(0.15);
-      }else if(encoder.getAbsolutePosition() <= 0.75){
+      }else if(encoder.getAbsolutePosition() <= 0.76){
         setArmMotor(0);
       }  
     }else if(pivotDirection == 1){
       if(encoder.getAbsolutePosition() < 0.97){
-        setArmMotor(-0.25);
+        setArmMotor(-0.30);
       }else if(encoder.getAbsolutePosition() < 0.99){
         setArmMotor(-0.15);
       }else if(encoder.getAbsolutePosition() >= 0.99){
@@ -280,28 +293,6 @@ public class Robot extends TimedRobot {
     }else{
       setArmMotor(0);
     }
-    
-    //pivot main arm (needs work)
-    /*if(m_Arm.getRawButton(1)){
-      if(encoder.getAbsolutePosition() > 0.8){
-        setArmMotor(0.25);
-      }else if(encoder.getAbsolutePosition() > 0.75){
-        setArmMotor(0.15);
-      }else if(encoder.getAbsolutePosition() <= 0.75){
-        setArmMotor(0);
-      }  
-    }else if(m_Arm.getRawButton(4)){
-      if(encoder.getAbsolutePosition() < 0.97){
-        setArmMotor(-0.25);
-      }else if(encoder.getAbsolutePosition() < 0.99){
-        setArmMotor(-0.15);
-      }else if(encoder.getAbsolutePosition() >= 0.99){
-        setArmMotor(0);
-      }  
-    }else{
-      setArmMotor(0);
-    }*/
-
   }
 
   /** This function is called once when the robot is disabled. */
