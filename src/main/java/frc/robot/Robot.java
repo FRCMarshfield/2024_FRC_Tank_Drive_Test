@@ -177,26 +177,33 @@ public class Robot extends TimedRobot {
     timeRun = Timer.getFPGATimestamp() - autoTimeStart;
     m_myRobot.tankDrive(leftSpeed, rightSpeed);
 
-    if(timeRun < 2){ //shoot the note from start position
+    if(timeRun < 2){
+      if(encoder.getAbsolutePosition() < 0.97){
+        setArmMotor(-0.30);
+      }else if(encoder.getAbsolutePosition() < 0.99){
+        setArmMotor(-0.15);
+      }else if(encoder.getAbsolutePosition() >= 0.99){
+        setArmMotor(0);
+      }  
+    }else if(timeRun < 4){ //shoot the note from start position
       setArmMotor(0);
       shootOn = true;
-      if(timeRun > 1){
-        System.out.println("Shoot");
+      if(timeRun > 5){
         intakeMode = true;
         intakeOn = true;
       }
     }
-    if(timeRun > 2){
+    if(timeRun > 7){
       intakeMode = false;
       intakeOn = false;
       shootOn = false;
       setArmMotor(0);
     }
 
-    if(timeRun > 5){
+    if(timeRun > 9){
       leftSpeed = 0;
       rightSpeed = 0;
-    }else if(timeRun > 3){
+    }else if(timeRun > 7){
       leftSpeed = 0.2;
       rightSpeed = -0.4;
       //leftSpeed = 0.4;
