@@ -4,37 +4,44 @@
 
 package frc.robot;
 
+//all of the imports
 import edu.wpi.first.wpilibj.TimedRobot;
 import edu.wpi.first.wpilibj.Timer;
 import edu.wpi.first.wpilibj.smartdashboard.SendableChooser;
 import edu.wpi.first.wpilibj.smartdashboard.SmartDashboard;
 import edu.wpi.first.math.controller.PIDController;
+import edu.wpi.first.math.geometry.Rotation2d;
+import edu.wpi.first.math.geometry.Translation2d;
 import edu.wpi.first.wpilibj.DigitalInput;
 import edu.wpi.first.wpilibj.DutyCycleEncoder;
 import edu.wpi.first.wpilibj.Joystick;
 import com.revrobotics.CANSparkMax;
+import com.revrobotics.RelativeEncoder;
 import com.revrobotics.CANSparkLowLevel.MotorType;
 import edu.wpi.first.wpilibj.drive.DifferentialDrive;
-//import com.ctre.phoenix.motorcontrol.can.WPI_TalonFX;
-// the above isnt working
+import com.ctre.phoenix6.configs.CurrentLimitsConfigs;
+import com.ctre.phoenix.motorcontrol.ControlMode;
+import com.ctre.phoenix6.Utils;
+import com.ctre.phoenix6.configs.TalonFXConfiguration;
+import com.ctre.phoenix6.controls.DutyCycleOut;
+import com.ctre.phoenix6.controls.Follower;
+import com.ctre.phoenix6.controls.PositionDutyCycle;
+import com.ctre.phoenix6.controls.compound.Diff_DutyCycleOut_Position;
+import com.ctre.phoenix6.hardware.TalonFX;
+import com.ctre.phoenix6.signals.InvertedValue;
 
-
-/**
- * The VM is configured to automatically run this class, and to call the functions corresponding to
- * each mode, as described in the TimedRobot documentation. If you change the name of this class or
- * the package after creating this project, you must also update the build.gradle file in the
- * project.
- */
 public class Robot extends TimedRobot {
   private static final String kDefaultAuto = "Default";
   private static final String kCustomAuto = "My Auto";
   private String m_autoSelected;
   private final SendableChooser<String> m_chooser = new SendableChooser<>();
 
-//added
+//controllers
   private DifferentialDrive m_myRobot;
   private Joystick m_Driver; //driver controller
   private Joystick m_Arm; //arm controller
+  
+  //motor ID #s
   private static final int leftFrontDeviceID = 4;
   private static final int leftRearDeviceID = 2;
   private static final int rightFrontDeviceID = 1;
@@ -44,92 +51,101 @@ public class Robot extends TimedRobot {
   private static final int intakeShootBottomID = 8;
   private static final int intakeShootTopID = 7;
   private static final int intake = 9;
-  private CANSparkMax m_leftFront;
-  private CANSparkMax m_leftRear;
-  private CANSparkMax m_rightFront;
-  private CANSparkMax m_rightRear;
+  private static final int climberID = 10;
+
+  //kraken motors
+  private final TalonFX m_leftFront = new TalonFX(leftFrontDeviceID);
+  private final TalonFX m_leftRear = new TalonFX(leftRearDeviceID);
+  private final TalonFX m_rightFront = new TalonFX(rightFrontDeviceID);
+  private final TalonFX m_rightRear = new TalonFX(rightRearDeviceID);
+  private final DutyCycleOut leftOut = new DutyCycleOut(0);
+  private final DutyCycleOut rightOut = new DutyCycleOut(0);
+  private final CurrentLimitsConfigs m_currentLim = new CurrentLimitsConfigs();
+
+  //neo motors
   private CANSparkMax m_armPivotLeft;
   private CANSparkMax m_armPivotRight;
   private CANSparkMax m_intakeShootBottom;
   private CANSparkMax m_intakeShootTop;
   private CANSparkMax m_intake;
+  private CANSparkMax m_climber;
+
   static final DutyCycleEncoder encoder = new DutyCycleEncoder(0); //pivot encoder
   DigitalInput laser = new DigitalInput(4);
   static final double kP = 0;
   static final double kI = 0;
   static final double kD = 0;
   PIDController pid = new PIDController(kP, kI, kD);
-  //DigitalInput laser2 = new DigitalInput();
+  DigitalInput laser2 = new DigitalInput(6);
 
-  /**
-   * This function is run when the robot is first started up and should be used for any
-   * initialization code.
-   */
+  
   @Override
   public void robotInit() {
-    m_chooser.setDefaultOption("Left", kDefaultAuto);
-    m_chooser.addOption("Right", kCustomAuto);
+    m_chooser.setDefaultOption("Center", kDefaultAuto);
+    m_chooser.addOption("Red Amp Side", kCustomAuto);
+    m_chooser.addOption("Blue Amp Side", kCustomAuto);
     SmartDashboard.putData("Auto choices", m_chooser);
 
-    m_leftFront = new CANSparkMax(leftFrontDeviceID, MotorType.kBrushless);
-    m_leftRear = new CANSparkMax(leftRearDeviceID, MotorType.kBrushless);
-    m_rightFront = new CANSparkMax(rightFrontDeviceID, MotorType.kBrushless);
-    m_rightRear = new CANSparkMax(rightRearDeviceID, MotorType.kBrushless);
+    //kraken setup
+    var leftConfiguration = new TalonFXConfiguration();
+    var rightConfiguration = new TalonFXConfiguration();
+    leftConfiguration.MotorOutput.Inverted = InvertedValue.CounterClockwise_Positive;
+    rightConfiguration.MotorOutput.Inverted = InvertedValue.Clockwise_Positive;
+    m_leftFront.getConfigurator().apply(leftConfiguration);
+    m_leftRear.getConfigurator().apply(leftConfiguration);
+    m_rightFront.getConfigurator().apply(rightConfiguration);
+    m_rightRear.getConfigurator().apply(rightConfiguration);
+    m_leftRear.setControl(new Follower(m_leftFront.getDeviceID(), false));
+    m_rightRear.setControl(new Follower(m_rightFront.getDeviceID(), false));
+    m_leftFront.setSafetyEnabled(true);
+    m_rightFront.setSafetyEnabled(true);
+    
+    //arm setup
     m_armPivotLeft = new CANSparkMax(armPivotLeftID, MotorType.kBrushless);
     m_armPivotRight = new CANSparkMax(armPivotRightID, MotorType.kBrushless);
     m_intakeShootBottom = new CANSparkMax(intakeShootBottomID, MotorType.kBrushless);
     m_intakeShootTop = new CANSparkMax(intakeShootTopID, MotorType.kBrushless);
     m_intake = new CANSparkMax(intake, MotorType.kBrushless);
-    
+    m_climber = new CANSparkMax(climberID, MotorType.kBrushless);
 
-    /**
-     * The RestoreFactoryDefaults method can be used to reset the configuration parameters
-     * in the SPARK MAX to their factory default state. If no argument is passed, these
-     * parameters will not persist between power cycles
-     */
-    
-    m_leftFront.restoreFactoryDefaults();
-    m_leftRear.restoreFactoryDefaults();
-    m_rightFront.restoreFactoryDefaults();
-    m_rightRear.restoreFactoryDefaults();
-
-    m_leftRear.follow(m_leftFront);
-    m_rightRear.follow(m_rightFront);
-
+    //robot setup
     m_myRobot = new DifferentialDrive(m_leftFront, m_rightFront);
 
+    //driver channel stuff
     m_Driver = new Joystick(0);
     m_Arm = new Joystick(1);
     m_Driver.setXChannel(4);
     m_Driver.setYChannel(1);
+    m_Arm.setXChannel(5);
 
+    //kraken limits
+    m_currentLim.SupplyCurrentLimit = 1;
+    m_currentLim.SupplyCurrentThreshold = 4;
+    m_currentLim.SupplyTimeThreshold = 1.0;
+    m_currentLim.StatorCurrentLimitEnable = true;
   }
 
-  /**
-   * This function is called every 20 ms, no matter the mode. Use this for items like diagnostics
-   * that you want ran during disabled, autonomous, teleoperated and test.
-   *
-   * <p>This runs after the mode specific periodic functions, but before LiveWindow and
-   * SmartDashboard integrated updating.
-   */
-
    //motor vars
-   static boolean intakeOn = false; //false = not active
-   static boolean pivotOn = false; //false = not active
-   static boolean shootOn = false; //false = not active
-   static double shooterSpeed = 0.5; //main shoot speed 39
-   static boolean intakeMode = false; //false = sucky uppy, true = shoooooooot
-   static boolean ampShoot = false; //false = regular, true = shoot the amp
-   static boolean ampMode = false; //false = regular, true = amp feed mode
-   static boolean driveDirection = false; //front switch var
-   static int pivotDirection = 2; //0 down, 1 up, 2 nothing
+   static boolean intakeOn = false; //whether the intake is running, false = off
+   static boolean shootOn = false; //whether the shooter motors are running, false = off
+   static double shooterSpeed = 0.5; //the speed the shooters are running
+   static boolean intakeMode = false; //whether the intake is in shoot mode or pickup mode, false = pickup mode
+   static boolean ampShoot = false; //whether we are running the amp shot, false = off
+   static int climber = 2; //if the climber is moving, 0 = up, 1 = down, 2 = home 
+   static double climberHome; //sets the home position of the climber
+   private double climberPos; //records the current climber encoder readout
+   private RelativeEncoder climberEncoder; //the climber encoder
+   static boolean turboSpeed = false; //run the drive train faster, false = off
+   static int pivotDirection = 2; //determines the arm movement, 0 = up, 1 = down, 2 = no movement
+   static double fwd;//drivetrain forward var
+   static double rot;//drivetrain rotation var
 
-   //arm motor setter
+   //arm motor controller and intake/shooter control
    public void setArmMotor(double percent){
     m_armPivotLeft.set(-percent);
     m_armPivotRight.set(percent);
 
-    if(intakeOn == true){
+    if(intakeOn == true){//intake setting
       if(intakeMode == false){ //sucky uppy
         m_intake.set(0.2);
       }else if(intakeMode == true){ //shoot mode
@@ -139,7 +155,7 @@ public class Robot extends TimedRobot {
       m_intake.set(0);
     }
     
-    if(ampShoot == true){ //amp shoot mode
+    if(ampShoot == true){ //amp shooting
       m_intakeShootTop.set(0.2);
       m_intakeShootBottom.set(0.2);
       m_intake.set(0.2);
@@ -148,7 +164,7 @@ public class Robot extends TimedRobot {
       m_intakeShootBottom.set(0);
     }
 
-    if(shootOn == true){
+    if(shootOn == true){//are we shooting
       m_intakeShootTop.set(shooterSpeed);
       m_intakeShootBottom.set(shooterSpeed);
     }
@@ -157,85 +173,286 @@ public class Robot extends TimedRobot {
   @Override
   public void robotPeriodic() {}
 
-  /**
-   * This autonomous (along with the chooser code above) shows how to select between different
-   * autonomous modes using the dashboard. The sendable chooser code works with the Java
-   * SmartDashboard. If you prefer the LabVIEW Dashboard, remove all of the chooser code and
-   * uncomment the getString line to get the auto name from the text box below the Gyro
-   *
-   * <p>You can add additional auto modes by adding additional comparisons to the switch structure
-   * below with additional strings. If using the SendableChooser make sure to add them to the
-   * chooser code above as well.
-   */
-  double autoTimeStart;
-  double timeRun;
-  double leftSpeed;
-  double rightSpeed;
-  boolean left = true; //true = left, false = right
+  //auton vars
+  double autoTimeStart; //the time auton is started
+  double timeRun; //the time auton has run
+  double stepTime; //the time the last step stopped
+
+  double posTargetLeft;
+  double posTargetRight;
+  double leftPos;
+  double rightPos;
+  double var;
+  double leftSpeed; //sets the left speed
+  double rightSpeed; //sets the right speed
+  double lastLeft = 0;
+  double lastRight = 0;
+  int step = 0;
+
+  //8.46 gear ratio
+  //18.84 inches per rev
+  public void setDist(int right, int left){
+    posTargetRight = ((right/18.84)*8.46) + lastRight;
+    posTargetLeft = ((left/18.84)*8.46) + lastLeft;
+
+    if(left >= right){
+      var = left*4;
+      leftSpeed = (left/var);
+      rightSpeed = (right/var);
+    }
+    if(left < right){
+      var = right*4;
+      leftSpeed = -(left/var);
+      rightSpeed = -(right/var);
+    }
+
+    if(rightPos >= posTargetRight){
+      rightSpeed = 0;
+    }else{
+      m_rightFront.set(rightSpeed);
+    }
+    if(leftPos >= posTargetLeft){
+      leftSpeed = 0;
+    }else{
+      m_leftFront.set(leftSpeed);
+    }
+
+    if(leftSpeed == 0){
+      if(rightSpeed == 0){
+        step = step + 1;
+        lastRight = m_rightFront.getPosition().getValue();
+        lastLeft = m_leftFront.getPosition().getValue();
+        stepTime = Timer.getFPGATimestamp();
+      }
+    }
+  } 
+
+  public void home(){
+    posTargetRight = 0;
+    posTargetLeft = 0;
+
+    if(leftPos >= rightPos){
+      var = leftPos*4;
+      leftSpeed = -(leftPos/var);
+      rightSpeed = -(rightPos/var);
+    }
+    if(leftPos < rightPos){
+      var = rightPos*4;
+      leftSpeed = -(leftPos/var);
+      rightSpeed = -(rightPos/var);
+    }
+
+    if(rightPos <= posTargetRight){
+      rightSpeed = 0;
+    }else{
+      m_rightFront.set(rightSpeed);
+    }
+    if(leftPos <= posTargetLeft){
+      leftSpeed = 0;
+    }else{
+      m_leftFront.set(leftSpeed);
+    }
+
+    if(leftSpeed == 0){
+      if(rightSpeed == 0){
+        step = step + 1;
+        lastRight = m_rightFront.getPosition().getValue();
+        lastLeft = m_leftFront.getPosition().getValue();
+        stepTime = Timer.getFPGATimestamp();
+      }
+    }
+  }
+
+  public void nextStep(){
+    step = step + 1;
+    stepTime = Timer.getFPGATimestamp();
+  }
+
   @Override
   public void autonomousInit() {
     m_autoSelected = m_chooser.getSelected();
     System.out.println("Auto selected: " + m_autoSelected);
     autoTimeStart = Timer.getFPGATimestamp();
+
+    m_leftFront.setPosition(0);
+    m_rightFront.setPosition(0);
   }
 
   /** This function is called periodically during autonomous. */
   @Override
   public void autonomousPeriodic() {
     timeRun = Timer.getFPGATimestamp() - autoTimeStart;
-    m_myRobot.tankDrive(leftSpeed, rightSpeed);
 
-    if(timeRun < 3){
-      if(encoder.getAbsolutePosition() < 0.97){
-        setArmMotor(-0.30);
-      }else if(encoder.getAbsolutePosition() < 0.99){
+    leftPos = m_leftFront.getPosition().getValue();
+    rightPos = m_rightFront.getPosition().getValue();
+
+    //if(m_autoSelected == "Center"){
+      if(step == 0){//arm to shoot pos and spin up motors
+        if(encoder.getAbsolutePosition() < 0.9){
+          setArmMotor(-0.2);
+        }else if(encoder.getAbsolutePosition() < 0.95){
+          setArmMotor(-0.1);
+          shootOn = true;
+        }else if(encoder.getAbsolutePosition() >= 0.94){
+          if(encoder.getAbsolutePosition() >= 0.96){
+            setArmMotor(0.1);
+            shootOn = true;
+            step = 1;
+        }else{
+          setArmMotor(0.0);
+        }
+        }else{
+          setArmMotor(0);
+        }
+      }else if(step == 1){//shoot note
+          intakeMode = true;
+          intakeOn = true;
+          setArmMotor(0);
+          if(timeRun > 4){
+            intakeOn = false;
+            intakeMode = false;
+            if(encoder.getAbsolutePosition() < 0.96){
+        setArmMotor(m_Arm.getY()*0.5);
+      }else if(encoder.getAbsolutePosition() < 0.985){
         setArmMotor(-0.15);
-      }else if(encoder.getAbsolutePosition() >= 0.99){
+      }else if(encoder.getAbsolutePosition() >= 0.985){
         setArmMotor(0);
+        nextStep();
       }  
-    }else if(timeRun < 4){ //shoot the note from start position
-      setArmMotor(0);
-      shootOn = true;
-    }
-    
-    if(timeRun > 5){
-      if(timeRun < 6){
-        intakeMode = false;
-        intakeOn = false;
-        shootOn = false;
-        setArmMotor(0);
+          
+          }
+      }else if(step == 2){//move to first note and pick it up
+        if(laser.get() == false){
+          if(laser2.get() == false){
+            intakeOn = false;
+          }else{
+            intakeOn = true;
+          }
+        }else{
+          intakeOn = true;
+        }
+        setDist(40,40);
+      }else if(step == 3){//return home
+        home();
+      }else if(step == 4){//raise arm and shoot note
+        if(encoder.getAbsolutePosition() < 0.9){
+          setArmMotor(-0.2);
+        }else if(encoder.getAbsolutePosition() < 0.95){
+          setArmMotor(-0.1);
+          shootOn = true;
+        }else if(encoder.getAbsolutePosition() >= 0.94){
+          if(encoder.getAbsolutePosition() >= 0.96){
+            setArmMotor(0.1);
+        }else{
+          setArmMotor(0.05);
+          nextStep();
+        }
+        }else{
+          setArmMotor(0);
+        }
+      }else if(step == 5){//shoot
+        if(stepTime + 1 <= Timer.getFPGATimestamp()){
+          intakeMode = true;
+          intakeOn = true;
+        }else{
+          intakeOn = false;
+          intakeMode = false;
+          shootOn = false;
+          nextStep();
+        }
+      }else if(step == 6){//
+      
+      }else if(step == 7){//
+      
+      }else if(step == 8){//
+
       }
-    }else if(timeRun > 4){
-      intakeMode = true;
-        intakeOn = true;
-      setArmMotor(0);
+    //}
+    
+    if(m_autoSelected == "Red Amp Side"){
+      if(step == 0){//arm to shoot pos and spin up motors
+        if(encoder.getAbsolutePosition() < 0.9){
+          setArmMotor(-0.2);
+        }else if(encoder.getAbsolutePosition() < 0.95){
+          setArmMotor(-0.1);
+          shootOn = true;
+        }else if(encoder.getAbsolutePosition() >= 0.94){
+          if(encoder.getAbsolutePosition() >= 0.96){
+            setArmMotor(0.1);
+        }else{
+          setArmMotor(0.05);
+          nextStep();
+        }
+        }else{
+          setArmMotor(0);
+        }
+      }else if(step == 1){//shoot note
+        setArmMotor(0);
+        if(stepTime + 1 <= Timer.getFPGATimestamp()){
+          intakeMode = true;
+          intakeOn = true;
+        }else{
+          intakeOn = false;
+          intakeMode = false;
+          nextStep();
+        }
+      }else if(step == 2){//move to first note and pick it up
+        
+      }else if(step == 3){//return home
+        
+      }else if(step == 4){//raise arm and shoot note
+      
+      }else if(step == 5){//lower arm
+
+      }else if(step == 6){//
+      
+      }else if(step == 7){//
+      
+      }else if(step == 8){//
+
+      }
     }
 
-    if(left == true){
-      if(timeRun > 13){
-        intakeMode =false;
-        intakeOn = false;
-        shootOn = false;
-        setArmMotor(0);
-      }else if(timeRun > 12){
-        intakeMode = true;
-        intakeOn = true;
-        setArmMotor(0);
-      }else if(timeRun > 10){
-        leftSpeed = 0;
-        rightSpeed = 0;
-        shootOn = true;
-        setArmMotor(0);
-      }else if(timeRun > 8){
-        intakeOn = false;
-        leftSpeed = -0.37;
-        rightSpeed = 0.37;
-        setArmMotor(0);
-      }else if(timeRun > 6){
-        intakeOn = laser.get();
-        setArmMotor(0);
-        leftSpeed = 0.35;
-        rightSpeed = -0.35;
+    if(m_autoSelected == "Blue Amp Side"){
+      if(step == 0){//arm to shoot pos and spin up motors
+        if(encoder.getAbsolutePosition() < 0.9){
+          setArmMotor(-0.2);
+        }else if(encoder.getAbsolutePosition() < 0.95){
+          setArmMotor(-0.1);
+          shootOn = true;
+        }else if(encoder.getAbsolutePosition() >= 0.94){
+          if(encoder.getAbsolutePosition() >= 0.96){
+            setArmMotor(0.1);
+        }else{
+          setArmMotor(0.05);
+          nextStep();
+        }
+        }else{
+          setArmMotor(0);
+        }
+      }else if(step == 1){//shoot note
+        if(stepTime + 1 <= Timer.getFPGATimestamp()){
+          intakeMode = true;
+          intakeOn = true;
+        }else{
+          intakeOn = false;
+          intakeMode = false;
+          nextStep();
+        }
+      }else if(step == 2){//move to first note and pick it up
+        
+      }else if(step == 3){//return home
+        
+      }else if(step == 4){//raise arm and shoot note
+      
+      }else if(step == 5){//lower arm
+
+      }else if(step == 6){//
+      
+      }else if(step == 7){//
+      
+      }else if(step == 8){//
+
       }
     }
   }
@@ -244,6 +461,8 @@ public class Robot extends TimedRobot {
   @Override
   public void teleopInit() {
     encoder.reset();
+    climberEncoder = m_climber.getEncoder();
+    climberHome = climberEncoder.getPosition();
   }
 
   /** This function is called periodically during operator control. */
@@ -251,18 +470,25 @@ public class Robot extends TimedRobot {
   @Override
   public void teleopPeriodic() {
     SmartDashboard.putNumber("Pivot Read Out", encoder.getAbsolutePosition()); //read out encoder pos
-    SmartDashboard.putNumber("PivotDirection", pivotDirection);
+    SmartDashboard.putNumber("Climb", climberEncoder.getPosition());
     SmartDashboard.putBoolean("Laser", laser.get());
+    SmartDashboard.putBoolean("Laser2", laser2.get());
 
-    //drive flip
-    if (m_Driver.getRawButton(1)){
-      driveDirection = !driveDirection;
-    }
-    if(driveDirection == false){
-      m_myRobot.arcadeDrive(m_Driver.getX()*75, m_Driver.getY(), true);
-    }
-    if(driveDirection == true){
-      m_myRobot.arcadeDrive(-m_Driver.getX()*75, -m_Driver.getY(), true);
+    climberPos = climberEncoder.getPosition();
+
+    //kraken stuff
+    leftOut.Output = fwd + rot;
+    rightOut.Output = fwd - rot;
+    m_leftFront.setControl(leftOut);
+    m_rightFront.setControl(rightOut);
+
+    //drive mode
+    if(m_Driver.getRawButton(6)){//nitrous active
+      fwd = -m_Driver.getY();
+      rot = m_Driver.getX()*0.5;
+    }else{//regular mode
+      fwd = -m_Driver.getY()*0.5;
+      rot = m_Driver.getX()*0.5;
     }
 
     //arm manual direction set
@@ -283,31 +509,17 @@ public class Robot extends TimedRobot {
 
     //intake note
     if(m_Arm.getRawButton(1)){
-      if(laser.get()){ //&& laser2.get()){
+      if(laser.get() == laser2.get()){
+        if(laser.get() == false){
           intakeOn = false;
+        }else{
+          intakeOn = true;
+        }
       }else{
         intakeOn = true;
       }
     }else{
       intakeOn = false;
-    }
-
-    //shoot setpoint (not finished yet)
-    if(m_Arm.getRawButton(4)){
-      if(encoder.get() > 0.9){
-        if(encoder.get() > 0.95){
-          setArmMotor(0.3);
-        }else{
-          setArmMotor(0.05);
-        }
-      }
-      if(encoder.get() < 0.9){
-        if(encoder.get() < 0.85){
-          setArmMotor(0.3);
-        }else{
-          setArmMotor(0.05);
-        }
-      }
     }
 
     //shoot spinup
@@ -327,6 +539,31 @@ public class Robot extends TimedRobot {
       intakeMode = false;
     }
 
+    //climbing control
+    if(m_Arm.getX() > 0.06 ){
+      climber = 0;
+    }else if(m_Arm.getX() < -0.06){
+      climber = 1;
+    }else{
+      climber = 2;
+    }
+
+    if(climber == 0){
+      if(climberEncoder.getPosition() > 46){
+        m_climber.set(0);
+      }else{
+        m_climber.set(0.5);
+      }
+    }else if(climber == 1){
+      if(climberEncoder.getPosition() < -36){
+        m_climber.set(0);
+      }else{
+        m_climber.set(-0.5);
+      }
+    }else{
+      m_climber.set(0);
+    }
+
     //manual arm control
     if(pivotDirection == 0){
       if(encoder.getAbsolutePosition() > 0.79){
@@ -339,11 +576,25 @@ public class Robot extends TimedRobot {
     }else if(pivotDirection == 1){
       if(encoder.getAbsolutePosition() < 0.96){
         setArmMotor(m_Arm.getY()*0.5);
-      }else if(encoder.getAbsolutePosition() < 0.98){
+      }else if(encoder.getAbsolutePosition() < 0.985){
         setArmMotor(-0.15);
-      }else if(encoder.getAbsolutePosition() >= 0.98){
+      }else if(encoder.getAbsolutePosition() >= 0.985){
         setArmMotor(0);
       }  
+    }else if(m_Arm.getRawButton(4)){//arm setpoint, negative = down
+      if(encoder.getAbsolutePosition() < 0.9){
+        setArmMotor(-0.2);
+      }else if(encoder.getAbsolutePosition() < 0.95){
+        setArmMotor(-0.1);
+      }else if(encoder.getAbsolutePosition() >= 0.95){
+        if(encoder.getAbsolutePosition() >= 0.97){
+          setArmMotor(0.1);
+        }else{
+          setArmMotor(0.05);
+        }
+      }else{
+        setArmMotor(0);
+      }
     }else{
       setArmMotor(0);
     }
