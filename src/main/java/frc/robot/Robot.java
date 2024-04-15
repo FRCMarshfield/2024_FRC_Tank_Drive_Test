@@ -31,8 +31,9 @@ import com.ctre.phoenix6.hardware.TalonFX;
 import com.ctre.phoenix6.signals.InvertedValue;
 
 public class Robot extends TimedRobot {
-  private static final String kDefaultAuto = "Default";
-  private static final String kCustomAuto = "My Auto";
+  private static final String kDefaultAuto = "Center";
+  private static final String kCustomAuto = "Red Amp Side";
+  private static final String kCustomAuto2 = "Blue Amp Side";
   private String m_autoSelected;
   private final SendableChooser<String> m_chooser = new SendableChooser<>();
 
@@ -82,7 +83,7 @@ public class Robot extends TimedRobot {
   @Override
   public void robotInit() {
     m_chooser.setDefaultOption("Center", kDefaultAuto);
-    m_chooser.addOption("Red Amp Side", kCustomAuto);
+    m_chooser.addOption("Red Amp Side", kCustomAuto2);
     m_chooser.addOption("Blue Amp Side", kCustomAuto);
     SmartDashboard.putData("Auto choices", m_chooser);
 
@@ -133,7 +134,6 @@ public class Robot extends TimedRobot {
    static boolean ampShoot = false; //whether we are running the amp shot, false = off
    static int climber = 2; //if the climber is moving, 0 = up, 1 = down, 2 = home 
    static double climberHome; //sets the home position of the climber
-   private double climberPos; //records the current climber encoder readout
    private RelativeEncoder climberEncoder; //the climber encoder
    static boolean turboSpeed = false; //run the drive train faster, false = off
    static int pivotDirection = 2; //determines the arm movement, 0 = up, 1 = down, 2 = no movement
@@ -185,9 +185,9 @@ public class Robot extends TimedRobot {
   double var;
   double leftSpeed; //sets the left speed
   double rightSpeed; //sets the right speed
-  double lastLeft = 0;
-  double lastRight = 0;
-  int step = 0;
+  double lastLeft;
+  double lastRight;
+  int step;
 
   //8.46 gear ratio
   //18.84 inches per rev
@@ -196,15 +196,27 @@ public class Robot extends TimedRobot {
     posTargetLeft = ((left/18.84)*8.46) + lastLeft;
 
     if(left >= right){
-      var = left*4;
+      var = left*8;
       leftSpeed = (left/var);
       rightSpeed = (right/var);
     }
     if(left < right){
-      var = right*4;
+      var = right*8;
       leftSpeed = -(left/var);
       rightSpeed = -(right/var);
     }
+
+    if(laser.get() == laser2.get()){
+          if(laser.get() == false){
+            intakeOn = false;
+            setArmMotor(0);
+          }else{
+            setArmMotor(0);
+            intakeOn = true;
+          }
+        }else{
+          intakeOn = true;
+        }
 
     if(rightPos >= posTargetRight){
       rightSpeed = 0;
@@ -222,7 +234,7 @@ public class Robot extends TimedRobot {
         step = step + 1;
         lastRight = m_rightFront.getPosition().getValue();
         lastLeft = m_leftFront.getPosition().getValue();
-        stepTime = Timer.getFPGATimestamp();
+        stepTime = Timer.getFPGATimestamp() - stepTime;
       }
     }
   } 
@@ -232,50 +244,53 @@ public class Robot extends TimedRobot {
     posTargetLeft = 0;
 
     if(leftPos >= rightPos){
-      var = leftPos*4;
+      var = leftPos*8;
       leftSpeed = -(leftPos/var);
       rightSpeed = -(rightPos/var);
     }
     if(leftPos < rightPos){
-      var = rightPos*4;
+      var = rightPos*8;
       leftSpeed = -(leftPos/var);
       rightSpeed = -(rightPos/var);
     }
 
     if(rightPos <= posTargetRight){
       rightSpeed = 0;
-    }else{
-      m_rightFront.set(rightSpeed);
     }
     if(leftPos <= posTargetLeft){
       leftSpeed = 0;
-    }else{
-      m_leftFront.set(leftSpeed);
     }
+
+    m_rightFront.set(rightSpeed);
+    m_leftFront.set(leftSpeed);
+
 
     if(leftSpeed == 0){
       if(rightSpeed == 0){
         step = step + 1;
         lastRight = m_rightFront.getPosition().getValue();
         lastLeft = m_leftFront.getPosition().getValue();
-        stepTime = Timer.getFPGATimestamp();
+        stepTime = Timer.getFPGATimestamp() - stepTime;
       }
     }
   }
 
   public void nextStep(){
     step = step + 1;
-    stepTime = Timer.getFPGATimestamp();
+    stepTime = Timer.getFPGATimestamp() - stepTime;
   }
 
   @Override
   public void autonomousInit() {
-    m_autoSelected = m_chooser.getSelected();
     System.out.println("Auto selected: " + m_autoSelected);
     autoTimeStart = Timer.getFPGATimestamp();
 
     m_leftFront.setPosition(0);
     m_rightFront.setPosition(0);
+
+    step = 0;
+    lastLeft = 0;
+    lastRight = 0;
   }
 
   /** This function is called periodically during autonomous. */
@@ -283,13 +298,15 @@ public class Robot extends TimedRobot {
   public void autonomousPeriodic() {
     timeRun = Timer.getFPGATimestamp() - autoTimeStart;
 
+    m_autoSelected = m_chooser.getSelected();
+
     leftPos = m_leftFront.getPosition().getValue();
     rightPos = m_rightFront.getPosition().getValue();
 
-    //if(m_autoSelected == "Center"){
+    if(m_autoSelected == "Center"){
       if(step == 0){//arm to shoot pos and spin up motors
         if(encoder.getAbsolutePosition() < 0.9){
-          setArmMotor(-0.2);
+          setArmMotor(-0.3);
         }else if(encoder.getAbsolutePosition() < 0.95){
           setArmMotor(-0.1);
           shootOn = true;
@@ -308,35 +325,28 @@ public class Robot extends TimedRobot {
           intakeMode = true;
           intakeOn = true;
           setArmMotor(0);
-          if(timeRun > 4){
-            intakeOn = false;
-            intakeMode = false;
-            if(encoder.getAbsolutePosition() < 0.96){
-        setArmMotor(m_Arm.getY()*0.5);
-      }else if(encoder.getAbsolutePosition() < 0.985){
-        setArmMotor(-0.15);
-      }else if(encoder.getAbsolutePosition() >= 0.985){
-        setArmMotor(0);
-        nextStep();
-      }  
-          
-          }
-      }else if(step == 2){//move to first note and pick it up
-        if(laser.get() == false){
-          if(laser2.get() == false){
-            intakeOn = false;
-          }else{
-            intakeOn = true;
-          }
-        }else{
-          intakeOn = true;
+        if(timeRun > 4.5){
+          intakeOn = false;
+          intakeMode = false;
+          shootOn = false;
+          if(encoder.getAbsolutePosition() < 0.96){
+            setArmMotor(-0.2);
+          }else if(encoder.getAbsolutePosition() < 0.985){
+            setArmMotor(-0.15);
+          }else if(encoder.getAbsolutePosition() >= 0.985){
+            setArmMotor(0);
+            nextStep();
+          }  
         }
+      }else if(step == 2){//move to first note and pick it up
         setDist(40,40);
       }else if(step == 3){//return home
+        shootOn = true;
         home();
-      }else if(step == 4){//raise arm and shoot note
+      }else if(step == 4){//raise arm
         if(encoder.getAbsolutePosition() < 0.9){
           setArmMotor(-0.2);
+          shootOn = true;
         }else if(encoder.getAbsolutePosition() < 0.95){
           setArmMotor(-0.1);
           shootOn = true;
@@ -351,28 +361,70 @@ public class Robot extends TimedRobot {
           setArmMotor(0);
         }
       }else if(step == 5){//shoot
-        if(stepTime + 1 <= Timer.getFPGATimestamp()){
+        if(timeRun < 12){
+          setArmMotor(0);
           intakeMode = true;
           intakeOn = true;
-        }else{
+        }else if(timeRun >= 12){
+          setArmMotor(0);
           intakeOn = false;
           intakeMode = false;
           shootOn = false;
-          nextStep();
+          if(timeRun > 13){
+            nextStep();
+          }
         }
       }else if(step == 6){//
-      
-      }else if(step == 7){//
-      
-      }else if(step == 8){//
-
+        setDist(40,40);
+        intakeOn = false;
+        intakeMode = false;
       }
-    //}
+    }
     
     if(m_autoSelected == "Red Amp Side"){
       if(step == 0){//arm to shoot pos and spin up motors
         if(encoder.getAbsolutePosition() < 0.9){
+          setArmMotor(-0.3);
+        }else if(encoder.getAbsolutePosition() < 0.95){
+          setArmMotor(-0.1);
+          shootOn = true;
+        }else if(encoder.getAbsolutePosition() >= 0.94){
+          if(encoder.getAbsolutePosition() >= 0.96){
+            setArmMotor(0.1);
+            shootOn = true;
+            step = 1;
+        }else{
+          setArmMotor(0.0);
+        }
+        }else{
+          setArmMotor(0);
+        }
+      }else if(step == 1){//shoot note
+          intakeMode = true;
+          intakeOn = true;
+          setArmMotor(0);
+        if(timeRun > 4.5){
+          intakeOn = false;
+          intakeMode = false;
+          shootOn = false;
+          if(encoder.getAbsolutePosition() < 0.96){
+            setArmMotor(-0.2);
+          }else if(encoder.getAbsolutePosition() < 0.985){
+            setArmMotor(-0.15);
+          }else if(encoder.getAbsolutePosition() >= 0.985){
+            setArmMotor(0);
+            nextStep();
+          }  
+        }
+      }else if(step == 2){//move to first note and pick it up
+        setDist(88, 20);
+      }else if(step == 3){//return home
+        shootOn = true;
+        home();
+      }else if(step == 4){//raise arm
+        if(encoder.getAbsolutePosition() < 0.9){
           setArmMotor(-0.2);
+          shootOn = true;
         }else if(encoder.getAbsolutePosition() < 0.95){
           setArmMotor(-0.1);
           shootOn = true;
@@ -386,37 +438,70 @@ public class Robot extends TimedRobot {
         }else{
           setArmMotor(0);
         }
-      }else if(step == 1){//shoot note
-        setArmMotor(0);
-        if(stepTime + 1 <= Timer.getFPGATimestamp()){
+      }else if(step == 5){//shoot
+        if(timeRun < 12){
+          setArmMotor(0);
           intakeMode = true;
           intakeOn = true;
-        }else{
+        }else if(timeRun >= 12){
+          setArmMotor(0);
           intakeOn = false;
           intakeMode = false;
-          nextStep();
+          shootOn = false;
+          if(timeRun > 13){
+            nextStep();
+          }
         }
-      }else if(step == 2){//move to first note and pick it up
-        
-      }else if(step == 3){//return home
-        
-      }else if(step == 4){//raise arm and shoot note
-      
-      }else if(step == 5){//lower arm
-
       }else if(step == 6){//
-      
-      }else if(step == 7){//
-      
-      }else if(step == 8){//
-
+        intakeOn = false;
+        intakeMode = false;
       }
     }
 
     if(m_autoSelected == "Blue Amp Side"){
       if(step == 0){//arm to shoot pos and spin up motors
         if(encoder.getAbsolutePosition() < 0.9){
+          setArmMotor(-0.3);
+        }else if(encoder.getAbsolutePosition() < 0.95){
+          setArmMotor(-0.1);
+          shootOn = true;
+        }else if(encoder.getAbsolutePosition() >= 0.94){
+          if(encoder.getAbsolutePosition() >= 0.96){
+            setArmMotor(0.1);
+            shootOn = true;
+            step = 1;
+        }else{
+          setArmMotor(0.0);
+        }
+        }else{
+          setArmMotor(0);
+        }
+      }else if(step == 1){//shoot note
+          intakeMode = true;
+          intakeOn = true;
+          setArmMotor(0);
+        if(timeRun > 4.5){
+          intakeOn = false;
+          intakeMode = false;
+          shootOn = false;
+          if(encoder.getAbsolutePosition() < 0.96){
+            setArmMotor(-0.2);
+          }else if(encoder.getAbsolutePosition() < 0.985){
+            setArmMotor(-0.15);
+          }else if(encoder.getAbsolutePosition() >= 0.985){
+            setArmMotor(0);
+            nextStep();
+          }  
+        }
+      }else if(step == 2){//move to first note and pick it up
+        setDist(20, 88);
+      }else if(step == 3){//return home
+        shootOn = true;
+        home();
+      }else if(step == 4){//raise arm
+        if(encoder.getAbsolutePosition() < 0.9){
           setArmMotor(-0.2);
+          shootOn = true;
         }else if(encoder.getAbsolutePosition() < 0.95){
           setArmMotor(-0.1);
           shootOn = true;
@@ -430,32 +515,28 @@ public class Robot extends TimedRobot {
         }else{
           setArmMotor(0);
         }
-      }else if(step == 1){//shoot note
-        if(stepTime + 1 <= Timer.getFPGATimestamp()){
+      }else if(step == 5){//shoot
+        if(timeRun < 12){
+          setArmMotor(0);
           intakeMode = true;
           intakeOn = true;
-        }else{
+        }else if(timeRun >= 12){
+          setArmMotor(0);
           intakeOn = false;
           intakeMode = false;
-          nextStep();
+          shootOn = false;
+          if(timeRun > 13){
+            nextStep();
+          }
         }
-      }else if(step == 2){//move to first note and pick it up
-        
-      }else if(step == 3){//return home
-        
-      }else if(step == 4){//raise arm and shoot note
-      
-      }else if(step == 5){//lower arm
-
       }else if(step == 6){//
-      
-      }else if(step == 7){//
-      
-      }else if(step == 8){//
-
+        intakeOn = false;
+        intakeMode = false;
       }
     }
   }
+
+  double climberPos;
 
   /** This function is called once when teleop is enabled. */
   @Override
@@ -473,6 +554,7 @@ public class Robot extends TimedRobot {
     SmartDashboard.putNumber("Climb", climberEncoder.getPosition());
     SmartDashboard.putBoolean("Laser", laser.get());
     SmartDashboard.putBoolean("Laser2", laser2.get());
+    SmartDashboard.putNumber("Shooter", shooterSpeed);
 
     climberPos = climberEncoder.getPosition();
 
@@ -486,9 +568,12 @@ public class Robot extends TimedRobot {
     if(m_Driver.getRawButton(6)){//nitrous active
       fwd = -m_Driver.getY();
       rot = m_Driver.getX()*0.5;
+    }else if(m_Driver.getRawButton(5)){
+      fwd = -m_Driver.getY()*0.25;
+      rot = m_Driver.getX()*0.2;
     }else{//regular mode
       fwd = -m_Driver.getY()*0.5;
-      rot = m_Driver.getX()*0.5;
+      rot = m_Driver.getX()*0.35;
     }
 
     //arm manual direction set
@@ -529,6 +614,12 @@ public class Robot extends TimedRobot {
       shootOn = false;
     }
 
+    if(m_Arm.getRawButton(3)){ //e-shoot
+      shooterSpeed = 0.7;
+    }else{
+      shooterSpeed = 0.5;
+    }
+
     //shoot the note
     if(m_Arm.getRawButton(6)){
       if(shootOn == true){
@@ -549,16 +640,16 @@ public class Robot extends TimedRobot {
     }
 
     if(climber == 0){
-      if(climberEncoder.getPosition() > 46){
+      if(climberEncoder.getPosition() > 152){
         m_climber.set(0);
       }else{
-        m_climber.set(0.5);
+        m_climber.set(1);
       }
     }else if(climber == 1){
-      if(climberEncoder.getPosition() < -36){
+      if(climberEncoder.getPosition() < -85){
         m_climber.set(0);
       }else{
-        m_climber.set(-0.5);
+        m_climber.set(-1);
       }
     }else{
       m_climber.set(0);
@@ -576,9 +667,9 @@ public class Robot extends TimedRobot {
     }else if(pivotDirection == 1){
       if(encoder.getAbsolutePosition() < 0.96){
         setArmMotor(m_Arm.getY()*0.5);
-      }else if(encoder.getAbsolutePosition() < 0.985){
+      }else if(encoder.getAbsolutePosition() < 0.988){
         setArmMotor(-0.15);
-      }else if(encoder.getAbsolutePosition() >= 0.985){
+      }else if(encoder.getAbsolutePosition() >= 0.988){
         setArmMotor(0);
       }  
     }else if(m_Arm.getRawButton(4)){//arm setpoint, negative = down
@@ -588,7 +679,7 @@ public class Robot extends TimedRobot {
         setArmMotor(-0.1);
       }else if(encoder.getAbsolutePosition() >= 0.95){
         if(encoder.getAbsolutePosition() >= 0.97){
-          setArmMotor(0.1);
+          setArmMotor(0.15);
         }else{
           setArmMotor(0.05);
         }
